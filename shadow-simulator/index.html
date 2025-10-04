@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light and Shadow Animation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(to bottom, #1a1a2e, #16213e);
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #444;
+            background: #0f1419;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .instructions {
+            color: #aaa;
+            font-size: 16px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">Drag the lightbulb closer to the ball. See how the shadow grows.</div>
+    <canvas id="scene" width="800" height="500"></canvas>
+    
+    <script>
+        const canvas = document.getElementById('scene');
+        const ctx = canvas.getContext('2d');
+        
+        // Scene elements
+        const ball = {
+            x: 400,
+            y: 250,
+            radius: 40
+        };
+        
+        const wall = {
+            x: 700,
+            y: 0,
+            width: 20,
+            height: canvas.height
+        };
+        
+        let lightPos = 150;
+        let lightY = 250;
+        let isDragging = false;
+        
+        function drawLightBulb(x, y) {
+            // Glow effect
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, 40);
+            gradient.addColorStop(0, 'rgba(255, 230, 100, 0.4)');
+            gradient.addColorStop(1, 'rgba(255, 230, 100, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, 40, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Bulb base
+            ctx.fillStyle = '#888';
+            ctx.fillRect(x - 8, y + 15, 16, 10);
+            
+            // Bulb glass
+            ctx.fillStyle = '#ffe680';
+            ctx.beginPath();
+            ctx.arc(x, y, 15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Highlight
+            ctx.fillStyle = '#fff9d0';
+            ctx.beginPath();
+            ctx.arc(x - 5, y - 5, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawBall(x, y, radius) {
+            // Ball gradient for 3D effect
+            const gradient = ctx.createRadialGradient(x - 10, y - 10, 5, x, y, radius);
+            gradient.addColorStop(0, '#4a90e2');
+            gradient.addColorStop(1, '#2563ab');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Ball outline
+            ctx.strokeStyle = '#1e40af';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        function drawWall() {
+            const gradient = ctx.createLinearGradient(wall.x, 0, wall.x + wall.width, 0);
+            gradient.addColorStop(0, '#555');
+            gradient.addColorStop(0.5, '#666');
+            gradient.addColorStop(1, '#555');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+        }
+        
+        function calculateShadow(lightX, lightY, ballX, ballY, ballRadius, wallX) {
+            // Vector from light to ball center
+            const dx = ballX - lightX;
+            const dy = ballY - lightY;
+            const distToCenter = Math.sqrt(dx * dx + dy * dy);
+            
+            // Calculate the tangent points using proper geometry
+            // For a circle and external point, tangent satisfies: (P-C)·(T-C) = r² / |P-C|
+            // where P is light point, C is center, T is tangent point, r is radius
+            
+            const a = ballRadius * ballRadius / distToCenter;
+            const h = Math.sqrt(ballRadius * ballRadius - a * a);
+            
+            // Point on line from light to center at distance a from center
+            const px = ballX - a * dx / distToCenter;
+            const py = ballY - a * dy / distToCenter;
+            
+            // Perpendicular offset
+            const offsetX = h * dy / distToCenter;
+            const offsetY = -h * dx / distToCenter;
+            
+            // Two tangent points
+            const topX = px + offsetX;
+            const topY = py + offsetY;
+            const bottomX = px - offsetX;
+            const bottomY = py - offsetY;
+            
+            // Calculate direction vectors from light to tangent points
+            const topRayDx = topX - lightX;
+            const topRayDy = topY - lightY;
+            const bottomRayDx = bottomX - lightX;
+            const bottomRayDy = bottomY - lightY;
+            
+            // Calculate where rays hit the wall
+            const tTop = (wallX - lightX) / topRayDx;
+            const tBottom = (wallX - lightX) / bottomRayDx;
+            
+            const shadowTopY = lightY + topRayDy * tTop;
+            const shadowBottomY = lightY + bottomRayDy * tBottom;
+            
+            return {
+                topX, topY, bottomX, bottomY,
+                shadowTopY, shadowBottomY,
+                shadowHeight: Math.abs(shadowBottomY - shadowTopY)
+            };
+        }
+        
+        function drawLightRays(lightX, lightY, shadow) {
+            ctx.strokeStyle = 'rgba(255, 230, 100, 0.3)';
+            ctx.lineWidth = 1.5;
+            
+            // Top ray
+            ctx.beginPath();
+            ctx.moveTo(lightX, lightY);
+            ctx.lineTo(shadow.topX, shadow.topY);
+            ctx.lineTo(wall.x, shadow.shadowTopY);
+            ctx.stroke();
+            
+            // Bottom ray
+            ctx.beginPath();
+            ctx.moveTo(lightX, lightY);
+            ctx.lineTo(shadow.bottomX, shadow.bottomY);
+            ctx.lineTo(wall.x, shadow.shadowBottomY);
+            ctx.stroke();
+            
+            // Draw dots at tangent points
+            ctx.fillStyle = 'rgba(255, 230, 100, 0.6)';
+            ctx.beginPath();
+            ctx.arc(shadow.topX, shadow.topY, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(shadow.bottomX, shadow.bottomY, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawShadow(shadow) {
+            // Shadow on wall
+            const gradient = ctx.createLinearGradient(wall.x - 50, 0, wall.x, 0);
+            gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.7)');
+            ctx.fillStyle = gradient;
+            
+            ctx.beginPath();
+            ctx.moveTo(wall.x, shadow.shadowTopY);
+            ctx.lineTo(wall.x, shadow.shadowBottomY);
+            ctx.lineTo(wall.x + 30, shadow.shadowBottomY);
+            ctx.lineTo(wall.x + 30, shadow.shadowTopY);
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        function animate() {
+            // Clear canvas
+            ctx.fillStyle = '#0f1419';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Calculate shadow
+            const shadow = calculateShadow(lightPos, lightY, ball.x, ball.y, ball.radius, wall.x);
+            
+            // Draw elements in order
+            drawWall();
+            drawShadow(shadow);
+            drawLightRays(lightPos, lightY, shadow);
+            drawBall(ball.x, ball.y, ball.radius);
+            drawLightBulb(lightPos, lightY);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Mouse event listeners
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Check if clicking near the lightbulb
+            const dist = Math.sqrt((mouseX - lightPos) ** 2 + (mouseY - lightY) ** 2);
+            if (dist < 30) {
+                isDragging = true;
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                lightPos = Math.max(50, Math.min(mouseX, ball.x - ball.radius - 50));
+                lightY = Math.max(50, Math.min(mouseY, canvas.height - 50));
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+        });
+        
+        canvas.style.cursor = 'pointer';
+        
+        animate();
+    </script>
+</body>
+</html>
